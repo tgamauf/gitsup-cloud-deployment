@@ -106,6 +106,7 @@ venv.bak/
 # Development
 .idea/
 *.txt
+!*requirements*.txt
 
 # Environment key file
 env.yaml
