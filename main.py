@@ -46,11 +46,15 @@ def _read_secrets():
     them.
     """
 
+    print("Decrypting secrets")
+
     crypto_key_id = os.environ["KMS_CRYPTO_KEY_ID"]
     encrypted_github_api_token = os.environ["GITHUB_API_TOKEN"]
     encrypted_github_webhook_secret = os.environ["GITHUB_WEBHOOK_SECRET"]
 
-    kms_client = googleapiclient.discovery.build("cloudkms", "v1")
+    kms_client = googleapiclient.discovery.build("cloudkms",
+                                                 "v1",
+                                                 cache_discovery=False)
 
     github_api_token = _decrypt(kms_client,
                                 crypto_key_id,
@@ -58,6 +62,8 @@ def _read_secrets():
     github_webhook_secret = _decrypt(kms_client,
                                      crypto_key_id,
                                      encrypted_github_webhook_secret)
+
+    print("Successfully decrypted secrets")
 
     return github_api_token, github_webhook_secret
 
@@ -79,6 +85,8 @@ def _decrypt(client, crypto_key_id, encrypted_secret):
 def _check_signature(secret, request):
     """ Check if we received the correct signature. """
 
+    print("Check signature")
+
     header_signature = request.headers.get("X-Hub-Signature")
     if not header_signature:
         print("Header signature missing in request", file=sys.stderr)
@@ -94,3 +102,5 @@ def _check_signature(secret, request):
     if not hmac.compare_digest(str(mac.hexdigest()), str(signature)):
         print("Invalid header signature in request", file=sys.stderr)
         abort(HTTPStatus.FORBIDDEN)
+
+    print("Signature is valid")
