@@ -1,3 +1,4 @@
 Flask==1.0.2
-gitsup>=0.2.4
+gitsup==0.3.0
+google-api-python-client==1.7.11
 requests==2.21.0
