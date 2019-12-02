@@ -1,4 +1,4 @@
-# gitsup-gcloud-deployment
+# gitsup-cloud-deployment
 
 Auto-update of git submodules of projects hosted on Github using [gitsup](
 https://github.com/tgamauf/gitsup) and [Google Cloud Functions](
