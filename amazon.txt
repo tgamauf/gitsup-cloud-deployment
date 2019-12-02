@@ -1,0 +1,113 @@
+# TODO https://towardsdatascience.com/introduction-to-amazon-lambda-layers-and-boto3-using-python3-39bd390add17
+
+Requirements:
+- cryptography
+- boto3
+- gitsup
+
+#TODO: https://docs.aws.amazon.com/de_de/lambda/latest/dg/lambda-python-how-to-create-deployment-package.html
+
+
+import base64
+import boto3
+import hmac
+from http import HTTPStatus
+from gitsup import update_git_submodules
+import os
+import sys
+
+
+# TODO https://docs.aws.amazon.com/de_de/lambda/latest/dg/python-programming-model-handler-types.html
+def autoupdate(request):
+    """
+    Execute auto-update if the request contains the correct `X-Hub-Signature`,
+    depending on the shared secret key.
+    See https://developer.github.com/webhooks/creating/.
+    """
+
+    github_api_token, github_webhook_secret = _read_secrets()
+
+    _check_signature(github_webhook_secret, request)
+
+    request_json = request.get_json()
+    try:
+        trigger_name = request_json["repository"]["name"]
+        print(f"Update triggered by repository '{trigger_name}'")
+    except KeyError:
+        print(f"Failed to get source repository name from request: {request_json}",
+              file=sys.stderr)
+
+    try:
+        update_git_submodules(token=github_api_token)
+    except ConnectionError as e:
+        print(f"{e}", file=sys.stderr)
+        abort(HTTPStatus.SERVICE_UNAVAILABLE)
+    except (PermissionError, RuntimeError) as e:
+        print(f"{e}", file=sys.stderr)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR)
+
+
+def _read_secrets():
+    """
+    Get the secrets from the environment. They are stored encrypted, so
+    we need to use the Google Key Management Service (KMS) to decrypt
+    them.
+    """
+
+    print("Decrypting secrets")
+
+    crypto_key_id = os.environ["KMS_CRYPTO_KEY_ID"]
+    encrypted_github_api_token = os.environ["GITHUB_API_TOKEN"]
+    encrypted_github_webhook_secret = os.environ["GITHUB_WEBHOOK_SECRET"]
+
+	kms_client = boto3.client('kms')
+
+    github_api_token = _decrypt(kms_client,
+                                crypto_key_id,
+                                encrypted_github_api_token)
+    github_webhook_secret = _decrypt(kms_client,
+                                     crypto_key_id,
+                                     encrypted_github_webhook_secret)
+
+    print("Successfully decrypted secrets")
+
+    return github_api_token, github_webhook_secret
+
+
+def _decrypt(client, crypto_key_id, encrypted_secret):
+    """ Decrypt a secret using the AWS Key Management Service. """
+
+	# TODO: https://docs.aws.amazon.com/de_de/kms/latest/developerguide/concepts.html
+	# TODO: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kms.html#KMS.Client.decrypt
+
+	# If a symmetric encryption algorithm was used, the 'KeyId' and
+	#  'EncryptionAlgorithm' parameters aren't necessary
+	response = kms.decrypt(CiphertextBlob=encrypted_secret,
+						   KeyId=crypto_key_id,
+						   EncryptionAlgorithm=RSAES_OAEP_SHA_256)
+
+	return base64.b64decode(response["Plaintext"]).decode("utf-8").strip()
+
+
+def _check_signature(secret, request):
+    """ Check if we received the correct signature. """
+
+    print("Check signature")
+
+    header_signature = request.headers.get("X-Hub-Signature")
+    if not header_signature:
+        print("Header signature missing in request", file=sys.stderr)
+        abort(HTTPStatus.FORBIDDEN)
+
+    sha_name, signature = header_signature.split("=")
+    if sha_name != "sha1":
+        print(f"Signature has invalid digest type: {sha_name}", file=sys.stderr)
+        abort(HTTPStatus.NOT_IMPLEMENTED)
+
+    mac = hmac.new(secret.encode("UTF-8"), msg=request.data, digestmod="sha1")
+
+    if not hmac.compare_digest(str(mac.hexdigest()), str(signature)):
+        print("Invalid header signature in request", file=sys.stderr)
+        abort(HTTPStatus.FORBIDDEN)
+
+    print("Signature is valid")
